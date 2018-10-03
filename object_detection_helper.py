@@ -63,17 +63,17 @@ class PlotLosses(keras.callbacks.Callback):
                 subplots = subplots + 1*(len(pl)>0)
                 if len(pl) > 0:
                     not_empty.append(pl)
-            rows = subplots // 2
+            rows = int(np.ceil(subplots / 2))
             f, axs = plt.subplots(rows, 2, sharex=True, figsize=(20,5*rows))
             axs = axs.flatten()
-            for i, ax in enumerate(axs):
-                for k,v in not_empty[i].items():
+            for i, ne in enumerate(not_empty):
+                for k,v in ne.items():
                     if 'val' in k:
-                        ax.plot(self.x, v, label=k, ls='-.', color='b')
+                        axs[i].plot(self.x, v, label=k, ls='-.', color='b')
                     else:
-                        ax.plot(self.x, v, label=k, color='r')        
+                        axs[i].plot(self.x, v, label=k, color='r')        
                     
-                ax.legend()
+                axs[i].legend()
             plt.show()
             
 def getBB_area(bb):
@@ -384,6 +384,21 @@ def get_VGG16(n_classes = 5, dropout_rate_classif = 0.5, dropout_bbox = 0.5, N_t
                              kernel_constraint=max_norm(2.))(GAP)
         
     model = Model(inputs=modelVGG16.input, outputs=[classification, bounding_box])
+    for layer in model.layers[N_trainable:]:
+        layer.trainable = True
+    for layer in model.layers[:N_trainable]:
+        layer.trainable = False
+    return model
+
+def get_VGG16_world(n_classes = 5, input_shape=(375, 500, 3), dropout_class = 0.5, dropout_confidence = 0.5, dropout_bbox = 0.5, N_trainable = 19, activation_class='softmax', activation_bbox=None, activation_confidence='sigmoid'):
+    modelVGG16 = VGG16(include_top=False, weights='imagenet', input_shape=input_shape)
+    GAP = GlobalAveragePooling2D()(BatchNormalization()(modelVGG16.output))
+    
+    classification = Dense(n_classes, activation=activation_class, name='category_output', kernel_constraint=max_norm(1.))(Dropout(dropout_class)(GAP))
+    bounding_box = Dense(4, activation=activation_bbox, name='bounding_box', kernel_constraint=max_norm(2.))(Dropout(dropout_bbox)(GAP))
+    confidence = Dense(1, activation=activation_confidence, name='obj_confidence', kernel_constraint=max_norm(2.))(Dropout(dropout_confidence)(GAP))
+    all_outs = Concatenate(name='concatenated_outputs')([classification, bounding_box, confidence])
+    model = Model(inputs=modelVGG16.input, outputs=[all_outs])
     for layer in model.layers[N_trainable:]:
         layer.trainable = True
     for layer in model.layers[:N_trainable]:
