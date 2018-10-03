@@ -1,5 +1,9 @@
 import tensorflow as tf
 from keras import backend as K
+n_classes = 5
+k_confidence = 1.0
+k_classification = 1.0
+k_bounding_boxes = 1.0
 
 def iou(boxA, boxB):
     xA = K.stack([boxA[:,0]-boxA[:,2]/2, boxB[:,0]-boxB[:,2]/2], axis=-1)
@@ -73,8 +77,6 @@ def IOU_loss_V2(boxA,boxB):
     iou_ = iou_v2(boxA,boxB)
     return K.ones_like(iou_)-iou_
 
-
-n_classes = 5
 def mse_custom_loss(y_true, y_pred):
     indexes_pos = tf.where(K.equal(y_true[:,-1], K.ones_like(y_true[:,-1])))[:,0]
     indexes_neg = tf.where(K.equal(y_true[:,-1], K.zeros_like(y_true[:,-1])))[:,0]
