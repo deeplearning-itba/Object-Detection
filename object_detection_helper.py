@@ -339,16 +339,16 @@ def get_simple_model(input_shape=(375, 500, 3), n_classes=5, dropout_rate_1 = 0.
     return model
 
 from keras.applications.vgg16 import VGG16
-def get_VGG16(n_classes = 5, dropout_rate_1 = 0.5, dropout_rate_2 = 0.25, N_trainable = 19):
-    modelVGG16 = VGG16(include_top=False, weights='imagenet')
-    GAP = GlobalAveragePooling2D()(modelVGG16.output)
-    classification = Dense(n_classes, 
-                           activation='softmax', 
-                           name='category_output', 
-                           kernel_constraint=max_norm(1.))(Dropout(dropout_rate_1)(GAP))
-    bounding_box = Dense(4, 
-                         name='bounding_box', 
-                         kernel_constraint=max_norm(2.))(Dropout(dropout_rate_2)(GAP))
+from keras.layers import Reshape
+
+def get_VGG16_no_dense(n_classes = 5, dropout_rate_1 = 0.5, dropout_rate_2 = 0.25, N_trainable = 19, input_shape=(375, 500,3)):
+    modelVGG16 = VGG16(include_top=False, weights='imagenet', input_shape=input_shape)
+    output = modelVGG16.output
+    last_h = output.shape[1].value
+    last_w = output.shape[2].value
+    classification = Flatten(name='category_output')(Conv2D(filters = n_classes, kernel_size = (last_h, last_w), activation='softmax')(output))
+    bounding_box = Flatten(name='bounding_box')(Conv2D(filters = 4, kernel_size = (last_h, last_w), activation=None)(output))
+    
     model = Model(inputs=modelVGG16.input, outputs=[classification, bounding_box])
     for layer in model.layers[N_trainable:]:
         layer.trainable = True
