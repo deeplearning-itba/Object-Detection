@@ -1,6 +1,6 @@
 import tensorflow as tf
 from keras import backend as K
-n_classes = 5
+n_classes = 6
 k_confidence = 1.0
 k_classification = 1.0
 k_bounding_boxes = 1.0

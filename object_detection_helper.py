@@ -18,6 +18,7 @@ class PlotLosses(keras.callbacks.Callback):
         self.total_losses = {}
         self.acc = {}
         self.abserrors = {}
+        self.confidences = {}
         self.cat_output_loss = {}
         self.bb_loss = {}
         self.ious = {}
@@ -30,6 +31,10 @@ class PlotLosses(keras.callbacks.Callback):
                 if k not in self.total_losses:
                     self.total_losses[k] = []
                 self.total_losses[k].append(v)
+            elif 'confidence' in k:
+                if k not in self.confidences:
+                    self.confidences[k] = []
+                self.confidences[k].append(v)
             elif 'category_output_loss' in k:
                 if k not in self.cat_output_loss:
                     self.cat_output_loss[k] = []
@@ -56,7 +61,7 @@ class PlotLosses(keras.callbacks.Callback):
         self.i += 1
         if (epoch%self.plot_interval==0):
             clear_output(wait=True)
-            to_plot = [self.total_losses, self.cat_output_loss, self.bb_loss, self.abserrors, self.acc, self.ious]
+            to_plot = [self.confidences, self.total_losses, self.cat_output_loss, self.bb_loss, self.abserrors, self.acc, self.ious]
             not_empty = []
             subplots = 0
             for pl in to_plot:
