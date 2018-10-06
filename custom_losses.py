@@ -5,6 +5,10 @@ k_confidence = 1.0
 k_classification = 1.0
 k_bounding_boxes = 1.0
 
+def set_classes(N = 6):
+    global n_classes
+    n_classes = N
+    
 def iou(boxA, boxB):
     xA = K.stack([boxA[:,0]-boxA[:,2]/2, boxB[:,0]-boxB[:,2]/2], axis=-1)
     yA = K.stack([boxA[:,1]-boxA[:,3]/2, boxB[:,1]-boxB[:,3]/2], axis=-1)
