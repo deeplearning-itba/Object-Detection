@@ -5,6 +5,12 @@ k_confidence = 1.0
 k_classification = 1.0
 k_bounding_boxes = 1.0
 
+def set_loss_weights(k_conf = 1.0, k_class = 1.0, k_bboxes = 1.0):
+    global k_confidence, k_classification, k_bounding_boxes
+    k_confidence = k_conf
+    k_classification = k_class
+    k_bounding_boxes = k_bboxes
+
 def set_classes(N = 6):
     global n_classes
     n_classes = N
@@ -45,7 +51,6 @@ def IOU_loss_V2(boxA,boxB):
     return K.ones_like(iou_)-iou_
 
 def iou_v2(y_true, y_pred):
-    n_classes = 5
     indexes = tf.where(K.equal(y_true[:,-1], K.ones_like(y_true[:,-1])))[:,0]
     y_true = tf.gather(y_true, indexes)
     y_pred = tf.gather(y_pred, indexes)
@@ -102,7 +107,7 @@ def custom_loss(y_true, y_pred):
     classes_cross_entropy = K.categorical_crossentropy(y_true_pos[:,:n_classes], y_pred_pos[:,:n_classes])
     bounding_box_mse = K.mean(K.square(y_pred_pos[:,n_classes:n_classes+4] - y_true_pos[:,n_classes:n_classes+4]), axis=-1)
     confidence_cross_entropy = K.mean(K.binary_crossentropy(y_true[:,n_classes+4:], y_pred[:,n_classes+4:]), axis=-1)
-    return K.mean(classes_cross_entropy) + K.mean(bounding_box_mse) + K.mean(confidence_cross_entropy)
+    return k_classification*K.mean(classes_cross_entropy) + k_bounding_boxes*K.mean(bounding_box_mse) + k_confidence*K.mean(confidence_cross_entropy)
 
 def cat_cross_entropy_loss(y_true, y_pred):
     indexes = tf.where(K.equal(y_true[:,-1], K.ones_like(y_true[:,-1])))[:,0]
