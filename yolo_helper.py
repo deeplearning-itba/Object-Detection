@@ -418,6 +418,87 @@ def softmax(x):
 from matplotlib import pyplot as plt
 import matplotlib.patches as patches
 
+def plot_bboxes(image, prediction, idx_2_class_id, classes_names):
+    text_to_print = ''
+        
+    GRID_H = prediction.shape[0]
+    GRID_W = prediction.shape[1]
+    im_height = image.shape[0]
+    im_width = image.shape[1]
+
+    # En este caso busco todos los que son mayores a 0.0 por que es antes de la softmax
+    pred_idx_all = np.where(prediction[:,:,0, 0] > 0.0)
+
+    f, axs = plt.subplots(1,2, figsize=(20,10))
+    ax = axs[0]
+    txt = axs[1]
+    ax.imshow(image)
+    pred_processed = []
+    for bbox_index in range(len(pred_idx_all[0])):
+        pred_idx = (np.array([pred_idx_all[0][bbox_index]]), np.array([pred_idx_all[1][bbox_index]]))
+        prediction_grid = prediction[pred_idx]
+        prediction_simple = prediction_grid[0][0]
+        predicted_yolo_box = prediction_simple[1+n_classes:]
+
+
+
+        predicted_box = yolo_bbox_2_PASCAL_VOC((pred_idx[0][0], pred_idx[1][0]), 
+                                      predicted_yolo_box, 
+                                      im_height, im_width, GRID_H, GRID_W)
+
+
+        pred_class_idx = np.argmax(prediction_simple[1:1+n_classes])
+        pred_processed.append({
+            "pred_class": str(classes_names[idx_2_class_id[pred_class_idx]]),
+            "obj_prob": sigmoid(prediction_simple[0]),
+            "class_prob": max(softmax(prediction_simple[1: 1+n_classes])), 
+            "bbox": predicted_box
+        })
+        text_to_print = text_to_print + 'PRED CLASS: ' + str(classes_names[idx_2_class_id[pred_class_idx]]) + '\n' 
+        text_to_print = text_to_print + 'Object Prob: {0:.2f}'.format(sigmoid(prediction_simple[0])) + '\n'
+        text_to_print = text_to_print + 'Class Prob: {0:.2f}'.format(max(softmax(prediction_simple[1: 1+n_classes]))) + '\n' 
+
+
+        text_to_print = text_to_print + 'GRID_X: ' + str(pred_idx[1][0]) + '\n'
+        text_to_print = text_to_print + 'GRID_Y: ' + str(pred_idx[0][0]) + '\n'
+        text_to_print = text_to_print + 'CENTER_X: {0:.2f}'.format(predicted_yolo_box[0]) + '\n'
+        text_to_print = text_to_print + 'CENTER_Y: {0:.2f}'.format(predicted_yolo_box[1]) + '\n'
+        text_to_print = text_to_print + 'WIDTH: {0:.2f}'.format(predicted_yolo_box[2]) + '\n'
+        text_to_print = text_to_print + 'HEIGHT: {0:.2f}'.format(predicted_yolo_box[3]) + '\n' + '\n'
+
+
+
+        pred_rect = patches.Rectangle([predicted_box[0], predicted_box[1]],
+                                    predicted_box[2]-predicted_box[0],
+                                    predicted_box[3]-predicted_box[1],
+                                    linewidth=2, edgecolor='b',facecolor='none')
+
+        ax.add_patch(pred_rect)
+
+
+        ax.scatter(predicted_box[0] + (predicted_box[2]-predicted_box[0])/2, predicted_box[1] + (predicted_box[3]-predicted_box[1])/2, c='b')
+
+    step_y = im_height/GRID_H
+    step_x = im_width/GRID_W
+    for i in range(GRID_W):
+        ax.vlines(i*step_x, 0, im_height, lw=0.5)
+    for i in range(GRID_H): 
+        ax.hlines(i*step_y, 0, im_width, lw=0.5)
+
+    ax.axis('off')
+    txt.axis('off')
+
+    for i in range(GRID_W):
+        for j in range(GRID_H):
+            ax.text(i*step_x+step_x/2, j*step_y +step_y/2, 
+                    '{0:.2f}'.format(sigmoid(prediction[j,i,0, 0])),
+                    verticalalignment='center', horizontalalignment='center')
+
+    txt.text(1, 0.95, text_to_print, transform=ax.transAxes, fontsize=14, verticalalignment='top')
+    plt.show()
+    return pred_processed
+    
+
 def plot_batch_with_predictions(images, annot, predictions, idx_2_class_id, classes_names, count=2, show_only_missed=False):
     n_classes = len(classes_names)
     iterat = min(count, len(images))
