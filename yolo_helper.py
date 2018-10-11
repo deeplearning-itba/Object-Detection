@@ -17,8 +17,8 @@ def PASCAL_VOC_bbox_2_yolo(bbox_orig, im_height, im_width, GRID_H = 13,  GRID_W 
     in_grid_W = int(in_grid_W_units)
     center_H = in_grid_H_units - in_grid_H
     center_W = in_grid_W_units - in_grid_W
-    norm_H = height*GRID_H
-    norm_W = width*GRID_W
+    norm_H = np.abs(height*GRID_H)
+    norm_W = np.abs(width*GRID_W)
     return (in_grid_H, in_grid_W), [center_W, center_H, norm_W, norm_H]
 
 def yolo_bbox_2_PASCAL_VOC(grid_coordinates, bbox_yolo, im_height, im_width, GRID_H, GRID_W):
@@ -199,7 +199,7 @@ def yolo_loss(y_true, y_pred):
     classes_cross_entropy = K.categorical_crossentropy(y_true_pos[:,1:1+n_classes], K.softmax(y_pred_pos[:,1:1+n_classes]))
     bounding_box_mse = K.mean(K.square(y_pred_pos[:,1+n_classes:1+n_classes+4] - y_true_pos[:,1+n_classes:1+n_classes+4]), axis=-1)
     confidence_cross_entropy_pos = K.mean(K.binary_crossentropy(y_true_pos[:,:1], K.sigmoid(y_pred_pos[:,:1])), axis=-1)
-    confidence_cross_entropy_neg = 0.1*K.mean(K.binary_crossentropy(y_true_neg[:,:1], K.sigmoid(y_pred_neg[:,:1])), axis=-1)
+    confidence_cross_entropy_neg = 0.01*K.mean(K.binary_crossentropy(y_true_neg[:,:1], K.sigmoid(y_pred_neg[:,:1])), axis=-1)
     return k_classification*K.mean(classes_cross_entropy) + k_bounding_boxes*K.mean(bounding_box_mse) + k_confidence*K.mean(confidence_cross_entropy_pos) + K.mean(confidence_cross_entropy_neg)
 
 
@@ -281,7 +281,7 @@ from imgaug import augmenters as iaa
 import imgaug as ia
 
 class GeneratorMultipleOutputs(Sequence):
-    def __init__(self, annotations_dict, folder, batch_size, target_size=(375, 500), GRID_H = 13, GRID_W = 13, BOX=1, classes=None, no_ext_idx=True, width_height_exp = False, flip_vertical=False, flip_horizontal=False):
+    def __init__(self, annotations_dict, folder, batch_size, target_size=(375, 500), GRID_H = 13, GRID_W = 13, BOX=1, classes=None, no_ext_idx=True, width_height_exp = False, flip_vertical=False, flip_horizontal=False, crop_per=0.0):
         # flip = {no_flip, always, random}
         # concat_output: classes + bounding box + confidence, todo en unico np.array
         # no_ext_idx: los keys del anotation son el filename pero sin extención (Se lo tengo que quitar entonces)
@@ -312,7 +312,9 @@ class GeneratorMultipleOutputs(Sequence):
             aug_oper.append(iaa.Fliplr(0.5))
         if flip_vertical:
             aug_oper.append(iaa.Flipud(0.5))
-        # aug_oper.append(iaa.Crop(px=(0, 64)))
+        if crop_per > 0:
+            aug_oper.append(iaa.Crop(percent=(0, crop_per)))
+            
         self.seq = iaa.Sequential(aug_oper)
     
     def get_yolo_annotations(self, classes_onehot):
@@ -344,9 +346,19 @@ class GeneratorMultipleOutputs(Sequence):
         for i, kp in enumerate(keypoints_aug):
             im_width = kp.shape[1]
             im_height = kp.shape[0]
-            bbox[:2] = kp.get_coords_array()[0]
-            bbox[2:4] = kp.get_coords_array()[1]
-            (in_grid_H, in_grid_W), yolo_bbox = PASCAL_VOC_bbox_2_yolo(bbox, im_height, im_width, self.GRID_H, self.GRID_W)
+            new_bbox = np.zeros(4)
+            
+            new_bbox[0] = kp.get_coords_array()[0][0]
+            new_bbox[1] = kp.get_coords_array()[0][1]
+            new_bbox[2] = kp.get_coords_array()[1][0]
+            new_bbox[3] = kp.get_coords_array()[1][1]
+            
+            new_bbox[0] = new_bbox[0]*(new_bbox[0]>0)*(new_bbox[0]<im_width) + (im_width-1)*(new_bbox[0]>=im_width)
+            new_bbox[1] = new_bbox[1]*(new_bbox[1]>0)*(new_bbox[1]<im_height) + (im_height-1)*(new_bbox[1]>=im_height)
+            new_bbox[2] = new_bbox[2]*(new_bbox[2]>0)*(new_bbox[2]<im_width) + (im_width-1)*(new_bbox[2]>=im_width)
+            new_bbox[3] = new_bbox[3]*(new_bbox[3]>0)*(new_bbox[3]<im_height) + (im_height-1)*(new_bbox[3]>=im_height)
+
+            (in_grid_H, in_grid_W), yolo_bbox = PASCAL_VOC_bbox_2_yolo(new_bbox, im_height, im_width, self.GRID_H, self.GRID_W)
             yolo_annotation_array[i, in_grid_H, in_grid_W, 0, 0] = 1
             yolo_annotation_array[i, in_grid_H, in_grid_W, 0, 1: 1+N_classes] = classes_onehot[i]
             yolo_annotation_array[i, in_grid_H, in_grid_W, 0, 1+N_classes:1+N_classes+4] = yolo_bbox
@@ -365,3 +377,145 @@ class GeneratorMultipleOutputs(Sequence):
         return self.__getitem__(0)
     def __iter__(self):
         return self
+    
+## Funciones auxiliares
+import math
+def getBB_area(bb):
+    IntersectionArea = (bb[:,2] - bb[:,0])*(bb[:,3] - bb[:,1])
+    return IntersectionArea
+
+def getIUO(bb1, bb2, from_center_to_box = False):
+    if from_center_to_box:
+        bb1 = np.array([
+             bb1[:,0] - bb1[:,2]/2, 
+             bb1[:,1] - bb1[:,3]/2,
+             bb1[:,0] + bb1[:,2]/2, 
+             bb1[:,1] + bb1[:,3]/2,]).T
+        bb2 = np.array([
+             bb2[:,0] - bb2[:,2]/2, 
+             bb2[:,1] - bb2[:,3]/2,
+             bb2[:,0] + bb2[:,2]/2, 
+             bb2[:,1] + bb2[:,3]/2,]).T
+
+    intersection_bb = np.array([np.vstack([bb1[:,0], bb2[:,0]]).max(axis=0),
+        np.vstack([bb1[:,1], bb2[:,1]]).max(axis=0),
+        np.vstack([bb1[:,2], bb2[:,2]]).min(axis=0),
+        np.vstack([bb1[:,3], bb2[:,3]]).min(axis=0)]).T
+    no_intersec = 1*(intersection_bb[:,3]-intersection_bb[:,1]>0)*(intersection_bb[:,2]-intersection_bb[:,0]>0)
+    intersection_bb = (intersection_bb.T * no_intersec).T
+    IntersectionArea = no_intersec*getBB_area(intersection_bb)
+    IOU = IntersectionArea/(getBB_area(bb1) + getBB_area(bb2) - IntersectionArea)
+    return IOU, intersection_bb
+
+def sigmoid(x):
+    return 1 / (1 + math.exp(-x))
+
+def softmax(x):
+    """Compute softmax values for each sets of scores in x."""
+    e_x = np.exp(x - np.max(x))
+    return e_x / e_x.sum(axis=0)
+
+from matplotlib import pyplot as plt
+import matplotlib.patches as patches
+
+def plot_batch_with_predictions(images, annot, predictions, idx_2_class_id, classes_names, count=2, show_only_missed=False):
+    n_classes = len(idx_2_class_id)
+    iterat = min(count, len(images))
+    error_count = 0
+    for index in range(iterat):
+        text_to_print = ''
+        annotation_ = annot[index]
+        GRID_H = annotation_.shape[1]
+        GRID_W = annotation_.shape[0]
+        im_height = images[0].shape[0]
+        im_width = images[0].shape[1]
+
+        grid_h, grid_w = np.where(annotation_[:,:,0, 0] == 1)
+        in_grid_H = grid_h[0]
+        in_grid_W = grid_w[0]
+
+        annotation_simple = annotation_[in_grid_H,in_grid_W][0]
+        yolo_bbox = annotation_simple[1+n_classes:]
+
+        # En este caso busco todos los que son mayores a 0.5
+        #pred_idx = np.where(predictions[index][:,:,0, 0] > 0.5)
+
+        # Aca hago trampa ya que supongo que hay solo uno
+        pred_idx = np.where(predictions[index][:,:,0, 0]==predictions[index][:,:,0, 0].max())
+        prediction = predictions[index][pred_idx]
+        prediction_simple = prediction[0][0]
+        predicted_yolo_box = prediction_simple[1+n_classes:]
+
+        bbox = yolo_bbox_2_PASCAL_VOC((in_grid_H, in_grid_W), 
+                                      yolo_bbox, 
+                                      im_height, im_width, GRID_H, GRID_W)
+
+        predicted_box = yolo_bbox_2_PASCAL_VOC((pred_idx[0][0], pred_idx[1][0]), 
+                                      predicted_yolo_box, 
+                                      im_height, im_width, GRID_H, GRID_W)
+        
+        iou, _ = getIUO(np.array(predicted_box).reshape(1,4), np.array(bbox).reshape(1,4), from_center_to_box = False)
+        pred_class_idx = np.argmax(prediction_simple[1:1+n_classes])
+        gt_class_idx = np.argmax(annotation_simple[1:1+n_classes])
+        
+        if pred_class_idx != gt_class_idx:
+            error_count = error_count + 1
+            
+        if pred_class_idx != gt_class_idx or not show_only_missed:
+            text_to_print = text_to_print + 'CLASS: ' + str(classes_names[idx_2_class_id[gt_class_idx]]) + '\n'
+            text_to_print = text_to_print + 'PRED CLASS: ' + str(classes_names[idx_2_class_id[pred_class_idx]]) + '\n' + '\n'
+            text_to_print = text_to_print + 'Object Prob: {0:.2f}'.format(sigmoid(prediction_simple[0])) + '\n'
+            text_to_print = text_to_print + 'Class Prob: {0:.2f}'.format(max(softmax(prediction_simple[1: 1+n_classes]))) + '\n' 
+
+            text_to_print = text_to_print + 'IOU: {0:.2f}'.format(iou[0]) + '\n'+ '\n'
+
+            text_to_print = text_to_print + 'GRID_X: ' + str(pred_idx[1][0]) + '\n'
+            text_to_print = text_to_print + 'GRID_Y: ' + str(pred_idx[1][0]) + '\n'
+            text_to_print = text_to_print + 'CENTER_X: {0:.2f}'.format(yolo_bbox[0]) + '\n'
+            text_to_print = text_to_print + 'CENTER_Y: {0:.2f}'.format(yolo_bbox[1]) + '\n'
+            text_to_print = text_to_print + 'WIDTH: {0:.2f}'.format(yolo_bbox[2]) + '\n'
+            text_to_print = text_to_print + 'HEIGHT: {0:.2f}'.format(yolo_bbox[3]) + '\n'
+
+            f, axs = plt.subplots(1,2, figsize=(20,10))
+            ax = axs[0]
+            txt = axs[1]
+            ax.imshow(images[index])
+
+            rect_gt = patches.Rectangle([bbox[0], bbox[1]],
+                                        bbox[2]-bbox[0],
+                                        bbox[3]-bbox[1],
+                                        linewidth=2, edgecolor='y',facecolor='none')
+
+            ax.add_patch(rect_gt)
+
+            pred_rect = patches.Rectangle([predicted_box[0], predicted_box[1]],
+                                        predicted_box[2]-predicted_box[0],
+                                        predicted_box[3]-predicted_box[1],
+                                        linewidth=2, edgecolor='b',facecolor='none')
+
+            ax.add_patch(pred_rect)
+
+            ax.scatter(bbox[0] + (bbox[2]-bbox[0])/2, bbox[1] + (bbox[3]-bbox[1])/2, c='y')
+            ax.scatter(predicted_box[0] + (predicted_box[2]-predicted_box[0])/2, predicted_box[1] + (predicted_box[3]-predicted_box[1])/2, c='b')
+
+            GRID_H = annotation_.shape[1]
+            GRID_W = annotation_.shape[0]
+            step_y = im_height/GRID_H
+            step_x = im_width/GRID_W
+            for i in range(GRID_W):
+                ax.vlines(i*step_x, 0, im_height, lw=0.5)
+            for i in range(GRID_H): 
+                ax.hlines(i*step_y, 0, im_width, lw=0.5)
+
+            ax.axis('off')
+            txt.axis('off')
+
+            for i in range(GRID_W):
+                for j in range(GRID_H):
+                    ax.text(i*step_x+step_x/2, j*step_y +step_y/2, 
+                             '{0:.2f}'.format(sigmoid(predictions[index][j,i,0, 0])),
+                             verticalalignment='center', horizontalalignment='center')
+
+            txt.text(1, 0.95, text_to_print, transform=ax.transAxes, fontsize=14, verticalalignment='top')
+            plt.show()
+    return error_count

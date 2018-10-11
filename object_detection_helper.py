@@ -79,6 +79,7 @@ class PlotLosses(keras.callbacks.Callback):
                         axs[i].plot(self.x, v, label=k, color='r')        
                     
                 axs[i].legend()
+                axs[i].grid()
             plt.show()
             
 def getBB_area(bb):
