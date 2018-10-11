@@ -408,7 +408,7 @@ def getIUO(bb1, bb2, from_center_to_box = False):
     return IOU, intersection_bb
 
 def sigmoid(x):
-    return 1 / (1 + math.exp(-x))
+    return 1 / (1 + np.exp(-x))
 
 def softmax(x):
     """Compute softmax values for each sets of scores in x."""
@@ -418,18 +418,16 @@ def softmax(x):
 from matplotlib import pyplot as plt
 import matplotlib.patches as patches
 
-def plot_bboxes(image, prediction, idx_2_class_id, classes_names):
+def plot_bboxes(image, prediction, idx_2_class_id, classes_names, thres = 0.5):
     text_to_print = ''
         
     GRID_H = prediction.shape[0]
     GRID_W = prediction.shape[1]
     im_height = image.shape[0]
     im_width = image.shape[1]
+    pred_idx_all = np.where(sigmoid(prediction[:,:,0, 0]) >= thres)
 
-    # En este caso busco todos los que son mayores a 0.0 por que es antes de la softmax
-    pred_idx_all = np.where(prediction[:,:,0, 0] > 0.0)
-
-    f, axs = plt.subplots(1,2, figsize=(20,10))
+    f, axs = plt.subplots(1,2, figsize=(20,10), gridspec_kw = {'width_ratios':[4, 1]})
     ax = axs[0]
     txt = axs[1]
     ax.imshow(image)
@@ -472,6 +470,7 @@ def plot_bboxes(image, prediction, idx_2_class_id, classes_names):
                                     predicted_box[2]-predicted_box[0],
                                     predicted_box[3]-predicted_box[1],
                                     linewidth=2, edgecolor='b',facecolor='none')
+        # 10*pred_processed[bbox_index]['obj_prob']
 
         ax.add_patch(pred_rect)
 
