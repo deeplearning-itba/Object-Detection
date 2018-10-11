@@ -419,103 +419,115 @@ from matplotlib import pyplot as plt
 import matplotlib.patches as patches
 
 def plot_batch_with_predictions(images, annot, predictions, idx_2_class_id, classes_names, count=2, show_only_missed=False):
-    n_classes = len(idx_2_class_id)
+    n_classes = len(classes_names)
     iterat = min(count, len(images))
     error_count = 0
     for index in range(iterat):
         text_to_print = ''
-        annotation_ = annot[index]
-        GRID_H = annotation_.shape[1]
-        GRID_W = annotation_.shape[0]
+        
+        GRID_H = predictions[index].shape[0]
+        GRID_W = predictions[index].shape[1]
         im_height = images[0].shape[0]
         im_width = images[0].shape[1]
-
-        grid_h, grid_w = np.where(annotation_[:,:,0, 0] == 1)
-        in_grid_H = grid_h[0]
-        in_grid_W = grid_w[0]
-
-        annotation_simple = annotation_[in_grid_H,in_grid_W][0]
-        yolo_bbox = annotation_simple[1+n_classes:]
-
-        # En este caso busco todos los que son mayores a 0.5
-        #pred_idx = np.where(predictions[index][:,:,0, 0] > 0.5)
-
-        # Aca hago trampa ya que supongo que hay solo uno
-        pred_idx = np.where(predictions[index][:,:,0, 0]==predictions[index][:,:,0, 0].max())
-        prediction = predictions[index][pred_idx]
-        prediction_simple = prediction[0][0]
-        predicted_yolo_box = prediction_simple[1+n_classes:]
-
-        bbox = yolo_bbox_2_PASCAL_VOC((in_grid_H, in_grid_W), 
-                                      yolo_bbox, 
-                                      im_height, im_width, GRID_H, GRID_W)
-
-        predicted_box = yolo_bbox_2_PASCAL_VOC((pred_idx[0][0], pred_idx[1][0]), 
-                                      predicted_yolo_box, 
-                                      im_height, im_width, GRID_H, GRID_W)
         
-        iou, _ = getIUO(np.array(predicted_box).reshape(1,4), np.array(bbox).reshape(1,4), from_center_to_box = False)
-        pred_class_idx = np.argmax(prediction_simple[1:1+n_classes])
-        gt_class_idx = np.argmax(annotation_simple[1:1+n_classes])
+        if annot is not None:
+            annotation_ = annot[index]
+            grid_h, grid_w = np.where(annotation_[:,:,0, 0] == 1)
+            in_grid_H = grid_h[0]
+            in_grid_W = grid_w[0]
+            annotation_simple = annotation_[in_grid_H,in_grid_W][0]
+            yolo_bbox = annotation_simple[1+n_classes:]
+
+        # En este caso busco todos los que son mayores a 0.0 por que es antes de la softmax
+        pred_idx_all = np.where(predictions[index][:,:,0, 0] > 0.0)
         
-        if pred_class_idx != gt_class_idx:
-            error_count = error_count + 1
-            
-        if pred_class_idx != gt_class_idx or not show_only_missed:
-            text_to_print = text_to_print + 'CLASS: ' + str(classes_names[idx_2_class_id[gt_class_idx]]) + '\n'
-            text_to_print = text_to_print + 'PRED CLASS: ' + str(classes_names[idx_2_class_id[pred_class_idx]]) + '\n' + '\n'
-            text_to_print = text_to_print + 'Object Prob: {0:.2f}'.format(sigmoid(prediction_simple[0])) + '\n'
-            text_to_print = text_to_print + 'Class Prob: {0:.2f}'.format(max(softmax(prediction_simple[1: 1+n_classes]))) + '\n' 
+        f, axs = plt.subplots(1,2, figsize=(20,10))
+        ax = axs[0]
+        txt = axs[1]
+        ax.imshow(images[index])
+        for bbox_index in range(len(pred_idx_all[0])):
+            pred_idx = (np.array([pred_idx_all[0][bbox_index]]), np.array([pred_idx_all[1][bbox_index]]))
+            # Aca hago trampa ya que supongo que hay solo uno
+            #pred_idx = np.where(predictions[index][:,:,0, 0]==predictions[index][:,:,0, 0].max())
 
-            text_to_print = text_to_print + 'IOU: {0:.2f}'.format(iou[0]) + '\n'+ '\n'
+            print(pred_idx)
+            prediction = predictions[index][pred_idx]
+            prediction_simple = prediction[0][0]
+            predicted_yolo_box = prediction_simple[1+n_classes:]
 
-            text_to_print = text_to_print + 'GRID_X: ' + str(pred_idx[1][0]) + '\n'
-            text_to_print = text_to_print + 'GRID_Y: ' + str(pred_idx[1][0]) + '\n'
-            text_to_print = text_to_print + 'CENTER_X: {0:.2f}'.format(yolo_bbox[0]) + '\n'
-            text_to_print = text_to_print + 'CENTER_Y: {0:.2f}'.format(yolo_bbox[1]) + '\n'
-            text_to_print = text_to_print + 'WIDTH: {0:.2f}'.format(yolo_bbox[2]) + '\n'
-            text_to_print = text_to_print + 'HEIGHT: {0:.2f}'.format(yolo_bbox[3]) + '\n'
 
-            f, axs = plt.subplots(1,2, figsize=(20,10))
-            ax = axs[0]
-            txt = axs[1]
-            ax.imshow(images[index])
 
-            rect_gt = patches.Rectangle([bbox[0], bbox[1]],
-                                        bbox[2]-bbox[0],
-                                        bbox[3]-bbox[1],
-                                        linewidth=2, edgecolor='y',facecolor='none')
+            predicted_box = yolo_bbox_2_PASCAL_VOC((pred_idx[0][0], pred_idx[1][0]), 
+                                          predicted_yolo_box, 
+                                          im_height, im_width, GRID_H, GRID_W)
 
-            ax.add_patch(rect_gt)
+            if annot is not None:
+                bbox = yolo_bbox_2_PASCAL_VOC((in_grid_H, in_grid_W), 
+                                              yolo_bbox, 
+                                              im_height, im_width, GRID_H, GRID_W)
 
-            pred_rect = patches.Rectangle([predicted_box[0], predicted_box[1]],
-                                        predicted_box[2]-predicted_box[0],
-                                        predicted_box[3]-predicted_box[1],
-                                        linewidth=2, edgecolor='b',facecolor='none')
+                iou, _ = getIUO(np.array(predicted_box).reshape(1,4), np.array(bbox).reshape(1,4), from_center_to_box = False)
+                gt_class_idx = np.argmax(annotation_simple[1:1+n_classes])
+                if pred_class_idx != gt_class_idx:
+                    error_count = error_count + 1
 
-            ax.add_patch(pred_rect)
+            pred_class_idx = np.argmax(prediction_simple[1:1+n_classes])
 
-            ax.scatter(bbox[0] + (bbox[2]-bbox[0])/2, bbox[1] + (bbox[3]-bbox[1])/2, c='y')
-            ax.scatter(predicted_box[0] + (predicted_box[2]-predicted_box[0])/2, predicted_box[1] + (predicted_box[3]-predicted_box[1])/2, c='b')
+            if not show_only_missed or pred_class_idx != gt_class_idx:
+                if annot is not None:
+                    text_to_print = text_to_print + 'CLASS: ' + str(classes_names[idx_2_class_id[gt_class_idx]]) + '\n'
+                    text_to_print = text_to_print + 'IOU: {0:.2f}'.format(iou[0]) + '\n'+ '\n'
 
-            GRID_H = annotation_.shape[1]
-            GRID_W = annotation_.shape[0]
-            step_y = im_height/GRID_H
-            step_x = im_width/GRID_W
-            for i in range(GRID_W):
-                ax.vlines(i*step_x, 0, im_height, lw=0.5)
-            for i in range(GRID_H): 
-                ax.hlines(i*step_y, 0, im_width, lw=0.5)
+                text_to_print = text_to_print + 'PRED CLASS: ' + str(classes_names[idx_2_class_id[pred_class_idx]]) + '\n' 
+                text_to_print = text_to_print + 'Object Prob: {0:.2f}'.format(sigmoid(prediction_simple[0])) + '\n'
+                text_to_print = text_to_print + 'Class Prob: {0:.2f}'.format(max(softmax(prediction_simple[1: 1+n_classes]))) + '\n' 
 
-            ax.axis('off')
-            txt.axis('off')
 
-            for i in range(GRID_W):
-                for j in range(GRID_H):
-                    ax.text(i*step_x+step_x/2, j*step_y +step_y/2, 
-                             '{0:.2f}'.format(sigmoid(predictions[index][j,i,0, 0])),
-                             verticalalignment='center', horizontalalignment='center')
+                text_to_print = text_to_print + 'GRID_X: ' + str(pred_idx[1][0]) + '\n'
+                text_to_print = text_to_print + 'GRID_Y: ' + str(pred_idx[0][0]) + '\n'
+                text_to_print = text_to_print + 'CENTER_X: {0:.2f}'.format(predicted_yolo_box[0]) + '\n'
+                text_to_print = text_to_print + 'CENTER_Y: {0:.2f}'.format(predicted_yolo_box[1]) + '\n'
+                text_to_print = text_to_print + 'WIDTH: {0:.2f}'.format(predicted_yolo_box[2]) + '\n'
+                text_to_print = text_to_print + 'HEIGHT: {0:.2f}'.format(predicted_yolo_box[3]) + '\n' + '\n'
 
-            txt.text(1, 0.95, text_to_print, transform=ax.transAxes, fontsize=14, verticalalignment='top')
-            plt.show()
+                
+                
+
+                if annot is not None:
+                    rect_gt = patches.Rectangle([bbox[0], bbox[1]],
+                                                bbox[2]-bbox[0],
+                                                bbox[3]-bbox[1],
+                                                linewidth=2, edgecolor='y',facecolor='none')
+
+                    ax.add_patch(rect_gt)
+                    ax.scatter(bbox[0] + (bbox[2]-bbox[0])/2, bbox[1] + (bbox[3]-bbox[1])/2, c='y')
+
+                pred_rect = patches.Rectangle([predicted_box[0], predicted_box[1]],
+                                            predicted_box[2]-predicted_box[0],
+                                            predicted_box[3]-predicted_box[1],
+                                            linewidth=2, edgecolor='b',facecolor='none')
+
+                ax.add_patch(pred_rect)
+
+
+                ax.scatter(predicted_box[0] + (predicted_box[2]-predicted_box[0])/2, predicted_box[1] + (predicted_box[3]-predicted_box[1])/2, c='b')
+
+        step_y = im_height/GRID_H
+        step_x = im_width/GRID_W
+        for i in range(GRID_W):
+            ax.vlines(i*step_x, 0, im_height, lw=0.5)
+        for i in range(GRID_H): 
+            ax.hlines(i*step_y, 0, im_width, lw=0.5)
+
+        ax.axis('off')
+        txt.axis('off')
+
+        for i in range(GRID_W):
+            for j in range(GRID_H):
+                ax.text(i*step_x+step_x/2, j*step_y +step_y/2, 
+                        '{0:.2f}'.format(sigmoid(predictions[index][j,i,0, 0])),
+                        verticalalignment='center', horizontalalignment='center')
+
+        txt.text(1, 0.95, text_to_print, transform=ax.transAxes, fontsize=14, verticalalignment='top')
+        plt.show()
     return error_count
