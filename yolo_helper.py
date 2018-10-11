@@ -526,12 +526,15 @@ def plot_batch_with_predictions(images, annot, predictions, idx_2_class_id, clas
         ax = axs[0]
         txt = axs[1]
         ax.imshow(images[index])
+        if annot is not None:
+            gt_class_idx = np.argmax(annotation_simple[1:1+n_classes])
+            text_to_print = text_to_print + 'CLASS: ' + str(classes_names[idx_2_class_id[gt_class_idx]]) + '\n' +  '\n'
+            
         for bbox_index in range(len(pred_idx_all[0])):
             pred_idx = (np.array([pred_idx_all[0][bbox_index]]), np.array([pred_idx_all[1][bbox_index]]))
             # Aca hago trampa ya que supongo que hay solo uno
             #pred_idx = np.where(predictions[index][:,:,0, 0]==predictions[index][:,:,0, 0].max())
 
-            print(pred_idx)
             prediction = predictions[index][pred_idx]
             prediction_simple = prediction[0][0]
             predicted_yolo_box = prediction_simple[1+n_classes:]
@@ -542,26 +545,26 @@ def plot_batch_with_predictions(images, annot, predictions, idx_2_class_id, clas
                                           predicted_yolo_box, 
                                           im_height, im_width, GRID_H, GRID_W)
 
+            
+
+            pred_class_idx = np.argmax(prediction_simple[1:1+n_classes])
+            
             if annot is not None:
                 bbox = yolo_bbox_2_PASCAL_VOC((in_grid_H, in_grid_W), 
                                               yolo_bbox, 
                                               im_height, im_width, GRID_H, GRID_W)
 
                 iou, _ = getIUO(np.array(predicted_box).reshape(1,4), np.array(bbox).reshape(1,4), from_center_to_box = False)
-                gt_class_idx = np.argmax(annotation_simple[1:1+n_classes])
+                
                 if pred_class_idx != gt_class_idx:
                     error_count = error_count + 1
 
-            pred_class_idx = np.argmax(prediction_simple[1:1+n_classes])
-
             if not show_only_missed or pred_class_idx != gt_class_idx:
-                if annot is not None:
-                    text_to_print = text_to_print + 'CLASS: ' + str(classes_names[idx_2_class_id[gt_class_idx]]) + '\n'
-                    text_to_print = text_to_print + 'IOU: {0:.2f}'.format(iou[0]) + '\n'+ '\n'
-
                 text_to_print = text_to_print + 'PRED CLASS: ' + str(classes_names[idx_2_class_id[pred_class_idx]]) + '\n' 
                 text_to_print = text_to_print + 'Object Prob: {0:.2f}'.format(sigmoid(prediction_simple[0])) + '\n'
                 text_to_print = text_to_print + 'Class Prob: {0:.2f}'.format(max(softmax(prediction_simple[1: 1+n_classes]))) + '\n' 
+                if annot is not None:
+                    text_to_print = text_to_print + 'IOU: {0:.2f}'.format(iou[0]) + '\n'
 
 
                 text_to_print = text_to_print + 'GRID_X: ' + str(pred_idx[1][0]) + '\n'
