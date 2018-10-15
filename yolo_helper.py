@@ -202,6 +202,27 @@ def yolo_loss(y_true, y_pred):
     confidence_cross_entropy_neg = 0.01*K.mean(K.binary_crossentropy(y_true_neg[:,:1], K.sigmoid(y_pred_neg[:,:1])), axis=-1)
     return k_classification*K.mean(classes_cross_entropy) + k_bounding_boxes*K.mean(bounding_box_mse) + k_confidence*K.mean(confidence_cross_entropy_pos) + K.mean(confidence_cross_entropy_neg)
 
+# https://arxiv.org/pdf/1708.02002.pdf
+def yolo_loss_focal_loss(y_true, y_pred):
+    indexes = tf.where(K.equal(y_true[:,:,:,:,0], K.ones_like(y_true[:,:,:,:,0])))
+    indexes_neg = tf.where(K.equal(y_true[:,:,:,:,0], K.zeros_like(y_true[:,:,:,:,0])))
+    
+    y_true_pos = tf.gather_nd(y_true, indexes)
+    y_pred_pos = tf.gather_nd(y_pred, indexes)
+    
+    y_true_neg = tf.gather_nd(y_true, indexes_neg)
+    y_pred_neg = tf.gather_nd(y_pred, indexes_neg)
+    
+    classes_cross_entropy = K.categorical_crossentropy(y_true_pos[:,1:1+n_classes], K.softmax(y_pred_pos[:,1:1+n_classes]))
+    bounding_box_mse = K.mean(K.square(y_pred_pos[:,1+n_classes:1+n_classes+4] - y_true_pos[:,1+n_classes:1+n_classes+4]), axis=-1)
+    gamma=2.
+    alpha=.25
+    #confidence_cross_entropy_pos = K.mean(K.binary_crossentropy(y_true_pos[:,:1], K.sigmoid(y_pred_pos[:,:1])), axis=-1)
+    #confidence_cross_entropy_neg = 0.01*K.mean(K.binary_crossentropy(y_true_neg[:,:1], K.sigmoid(y_pred_neg[:,:1])), axis=-1)
+    focal_loss = -K.mean(alpha * K.pow(1. - K.sigmoid(y_pred_pos[:,:1]), gamma) * K.log(K.epsilon()+K.sigmoid(y_pred_pos[:,:1]))) - K.mean((1-alpha) * K.pow( K.sigmoid(y_pred_neg[:,:1]), gamma) * K.log(K.epsilon() + 1. - K.sigmoid(y_pred_neg[:,:1])))
+    
+    return k_classification*K.mean(classes_cross_entropy) + k_bounding_boxes*K.mean(bounding_box_mse) + K.mean(focal_loss)
+# + k_confidence*K.mean(confidence_cross_entropy_pos) + K.mean(confidence_cross_entropy_neg)
 
 def classes_acc(y_true, y_pred):
     indexes = tf.where(K.equal(y_true[:,:,:,:,0], K.ones_like(y_true[:,:,:,:,0])))
@@ -331,7 +352,7 @@ class GeneratorMultipleOutputs(Sequence):
         batch_filenames = np.array(self.generator.filenames)[shuffle_indexes][(batch_index-1) * batch_size: batch_index*batch_size]
         # Obtengo classes
         classes = np.array(self.generator.classes)[self.generator.index_array][(batch_index-1) * batch_size:batch_index*batch_size]
-        yolo_annotation_array = np.zeros([batch_size, self.GRID_H, self.GRID_W, self.BOX, 1 + N_classes + 4])
+        yolo_annotation_array = np.zeros([len(batch_filenames), self.GRID_H, self.GRID_W, self.BOX, 1 + N_classes + 4])
         keypoints_on_images = []
         for i, filename in enumerate(batch_filenames):
             class_id = self.idx_2_class_id[classes[i]]
