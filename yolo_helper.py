@@ -190,16 +190,23 @@ def set_classes(N = 6):
     n_classes = N
     
 def yolo_loss(y_true, y_pred):
+    # Indices donde hay objeto
     indexes = tf.where(K.equal(y_true[:,:,:,:,0], K.ones_like(y_true[:,:,:,:,0])))
+    # Indices donde no hay objetos
     indexes_neg = tf.where(K.equal(y_true[:,:,:,:,0], K.zeros_like(y_true[:,:,:,:,0])))
-    y_true_pos = tf.gather_nd(y_true, indexes)
-    y_pred_pos = tf.gather_nd(y_pred, indexes)
-    y_true_neg = tf.gather_nd(y_true, indexes_neg)
-    y_pred_neg = tf.gather_nd(y_pred, indexes_neg)
+    y_true_pos = tf.gather_nd(y_true, indexes) # Unos que corresponden a ground truth con objetos
+    y_pred_pos = tf.gather_nd(y_pred, indexes) # Predicción para ground truth con objetos
+    y_true_neg = tf.gather_nd(y_true, indexes_neg) # Ceros que corresponden a ground truth sin objetos
+    y_pred_neg = tf.gather_nd(y_pred, indexes_neg) # Predicción para ground truth sin objetos
+    # Cálculo de entropía categórica - solo suma cuando hay objeto
     classes_cross_entropy = K.categorical_crossentropy(y_true_pos[:,1:1+n_classes], K.softmax(y_pred_pos[:,1:1+n_classes]))
+    # Cálculo de bounding box - solo suma cuando hay objeto
     bounding_box_mse = K.mean(K.square(y_pred_pos[:,1+n_classes:1+n_classes+4] - y_true_pos[:,1+n_classes:1+n_classes+4]), axis=-1)
+    # Cálculo de entropía binaria para cuando hay objeto
     confidence_cross_entropy_pos = K.mean(K.binary_crossentropy(y_true_pos[:,:1], K.sigmoid(y_pred_pos[:,:1])), axis=-1)
+    # Cálculo de entropía binaria para cuando NO hay objeto (Estan separadas para poder pesarlas distinto)
     confidence_cross_entropy_neg = 0.01*K.mean(K.binary_crossentropy(y_true_neg[:,:1], K.sigmoid(y_pred_neg[:,:1])), axis=-1)
+    # Devuelvo la suma de todas las losses
     return k_classification*K.mean(classes_cross_entropy) + k_bounding_boxes*K.mean(bounding_box_mse) + k_confidence*K.mean(confidence_cross_entropy_pos) + K.mean(confidence_cross_entropy_neg)
 
 # https://arxiv.org/pdf/1708.02002.pdf
@@ -490,7 +497,7 @@ def plot_bboxes(image, prediction, idx_2_class_id, classes_names, thres = 0.5):
         pred_rect = patches.Rectangle([predicted_box[0], predicted_box[1]],
                                     predicted_box[2]-predicted_box[0],
                                     predicted_box[3]-predicted_box[1],
-                                    linewidth=2, edgecolor='b',facecolor='none')
+                                    linewidth=1, edgecolor='b',facecolor='none')
         # 10*pred_processed[bbox_index]['obj_prob']
 
         ax.add_patch(pred_rect)
@@ -512,7 +519,7 @@ def plot_bboxes(image, prediction, idx_2_class_id, classes_names, thres = 0.5):
         for j in range(GRID_H):
             ax.text(i*step_x+step_x/2, j*step_y +step_y/2, 
                     '{0:.2f}'.format(sigmoid(prediction[j,i,0, 0])),
-                    verticalalignment='center', horizontalalignment='center')
+                    verticalalignment='center', horizontalalignment='center', color='w')
 
     txt.text(1, 0.95, text_to_print, transform=ax.transAxes, fontsize=14, verticalalignment='top')
     plt.show()
